@@ -33,12 +33,13 @@ trait ChecksDuplicateVariants
         $sameOptions = $siblings->first(fn ($v) => ProductVariant::canonicalConfig($v->config) === $canonical);
 
         if ($sameOptions && ($this->has('config') || $this->has('is_active'))) {
-            $validator->errors()->add('config', "Variant #{$sameOptions->id} \"{$sameOptions->title}\" already has these options. Change an option, or hide that variant first.");
+            $validator->errors()->add('config', "Variant #{$sameOptions->id} \"{$sameOptions->title}\" already has these options. "
+                . "Change an option here, or go back, open #{$sameOptions->id} and untick \"Visible in the store\" (or delete it).");
         }
 
         $title = trim((string) $this->input('title', ''));
         if ($title !== '' && $siblings->contains(fn ($v) => mb_strtolower($v->title) === mb_strtolower($title))) {
-            $validator->errors()->add('title', 'Another visible variant of this product already has this title.');
+            $validator->errors()->add('title', 'Another visible variant of this product already has this title. Leave the title empty to build it from the options.');
         }
     }
 }
