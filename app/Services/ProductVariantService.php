@@ -49,8 +49,9 @@ class ProductVariantService
 
     /**
      * Build "Model · config values", skipping values already contained in the model name.
+     * Public so the catalog:fix command builds titles exactly like the admin form does.
      */
-    private function makeTitle(string $model, array $config): string
+    public function makeTitle(string $model, array $config): string
     {
         $extra = collect($config)
             ->filter(fn ($v) => is_scalar($v) && ! str_contains($model, (string) $v))
