@@ -175,7 +175,8 @@ class ProductService
 
         $query = Product::query()
             ->where('is_active', true)
-            ->with(['category', 'brand', 'images', 'variants'])
+            // Hidden variants (is_active = false) never reach the store
+            ->with(['category', 'brand', 'images', 'variants' => fn ($v) => $v->active()])
             ->when(
                 $filter['category'] ?? null,
                 fn (Builder $q, $slug) => $q->whereHas(
@@ -202,6 +203,7 @@ class ProductService
             ->when(
                 is_numeric($min) || is_numeric($max),
                 fn (Builder $q) => $q->whereHas('variants', function ($v) use ($min, $max) {
+                    $v->active();
                     if (is_numeric($min)) {
                         $v->where('price', '>=', $min);
                     }
@@ -214,7 +216,8 @@ class ProductService
         // Sort by the cheapest variant price of each product
         $minPriceSub = fn () => ProductVariant::query()
             ->selectRaw('MIN(price)')
-            ->whereColumn('product_id', 'products.id');
+            ->whereColumn('product_id', 'products.id')
+            ->where('is_active', true);
 
         match ($filter['sort'] ?? null) {
             'price_asc'  => $query->orderBy($minPriceSub(), 'asc')->orderByDesc('id'),
@@ -231,7 +234,7 @@ class ProductService
     {
         abort_unless($product->is_active, 404);
 
-        return $product->load([...self::DETAIL_RELATIONS, 'variants']);
+        return $product->load([...self::DETAIL_RELATIONS, 'variants' => fn ($v) => $v->active()]);
     }
 
     /** Admin product detail */
@@ -276,12 +279,12 @@ class ProductService
             : $query->whereHas('brand', fn ($b) => $b->whereIn('slug', $slugs));
     }
 
-    /** At least one variant is cheaper than its compare (old) price. */
+    /** At least one visible variant is cheaper than its compare (old) price. */
     private function whereOnSale(Builder $query): Builder
     {
         return $query->whereHas(
             'variants',
-            fn ($v) => $v->whereNotNull('compare_price')->whereColumn('compare_price', '>', 'price')
+            fn ($v) => $v->active()->whereNotNull('compare_price')->whereColumn('compare_price', '>', 'price')
         );
     }
 }

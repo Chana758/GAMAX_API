@@ -250,21 +250,22 @@ class FixCatalogData extends Command
      */
     private function fixVariantTitles(Product $product): void
     {
-        $proposed = $product->variants->mapWithKeys(fn ($v) => [
+        $visible  = $product->variants->where('is_active', true);
+        $proposed = $visible->mapWithKeys(fn ($v) => [
             $v->id => $this->variants->makeTitle($product->name, $v->config ?? []),
         ]);
 
         $clashing = $proposed->duplicates();
 
-        foreach ($product->variants as $variant) {
+        foreach ($visible as $variant) {
             $new = $proposed[$variant->id];
 
             if ($clashing->contains($new)) {
                 // Keep the person's title, only drop the "🔥 Deal" mark
                 $new = $this->stripDeal($variant->title);
-                $others = $product->variants->filter(fn ($v) => $proposed[$v->id] === $proposed[$variant->id])->pluck('id')->implode(', #');
+                $others = $visible->filter(fn ($v) => $proposed[$v->id] === $proposed[$variant->id])->pluck('id')->implode(', #');
                 $this->decide("Variants #{$others} of \"{$product->name}\" have the same options ({$this->json($variant->config)}). "
-                    . 'Fix the options or delete one in Admin > Products > Variants.');
+                    . 'Fix the options, or hide/delete one in Admin > Products > Variants.');
             }
 
             if ($new !== $variant->title) {
@@ -276,7 +277,7 @@ class FixCatalogData extends Command
 
     private function checkPrices(Product $product): void
     {
-        $product->variants->groupBy(fn ($v) => (string) $v->price)
+        $product->variants->where('is_active', true)->groupBy(fn ($v) => (string) $v->price)
             ->filter(fn ($group) => $group->count() > 1 && $group->pluck('config')->unique()->count() > 1)
             ->each(fn ($group) => $this->decide(
                 "Variants #" . $group->pluck('id')->implode(', #') . " of \"{$product->name}\" have different options but the same price \${$group->first()->price}. Check the prices."

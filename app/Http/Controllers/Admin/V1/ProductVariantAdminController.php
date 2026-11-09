@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Services\ProductVariantService;
 use Illuminate\Database\QueryException;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -40,7 +41,11 @@ class ProductVariantAdminController extends Controller
         // Uses ProductVariantPolicy (variant.create)
         $this->authorize('create', ProductVariant::class);
 
-        $variant = $this->variantService->create($product, $request->validated());
+        try {
+            $variant = $this->variantService->create($product, $request->validated());
+        } catch (UniqueConstraintViolationException $e) {
+            return $this->duplicateResponse($e);
+        }
 
         return response()->json([
             'success' => true,
@@ -65,7 +70,11 @@ class ProductVariantAdminController extends Controller
     {
         $this->authorize('update', $variant);
 
-        $variant = $this->variantService->update($variant, $request->validated());
+        try {
+            $variant = $this->variantService->update($variant, $request->validated());
+        } catch (UniqueConstraintViolationException $e) {
+            return $this->duplicateResponse($e);
+        }
 
         return response()->json([
             'success' => true,
@@ -87,7 +96,7 @@ class ProductVariantAdminController extends Controller
             if (($e->errorInfo[0] ?? $e->getCode()) === '23503') {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Cannot delete a variant that has been ordered. Set in_stock to false instead.',
+                    'message' => 'Cannot delete a variant that has been ordered. Hide it instead (is_active = false).',
                 ], Response::HTTP_UNPROCESSABLE_ENTITY);
             }
 
@@ -98,5 +107,19 @@ class ProductVariantAdminController extends Controller
             'success' => true,
             'message' => 'Variant deleted successfully.',
         ]);
+    }
+
+    /** The generated title (or SKU) is already used by another visible variant of this product. */
+    private function duplicateResponse(UniqueConstraintViolationException $e): JsonResponse
+    {
+        $field = str_contains($e->getMessage(), 'sku') ? 'sku' : 'title';
+
+        return response()->json([
+            'success' => false,
+            'message' => 'The given data was invalid.',
+            'errors'  => [$field => [$field === 'sku'
+                ? 'This SKU is already in use.'
+                : 'Another visible variant of this product already has this title. Change an option or type a title.']],
+        ], Response::HTTP_UNPROCESSABLE_ENTITY);
     }
 }

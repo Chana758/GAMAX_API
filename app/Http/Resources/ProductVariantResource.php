@@ -22,6 +22,7 @@ class ProductVariantResource extends JsonResource
                 : null,
             'in_stock'         => $this->in_stock,
             'stock_quantity'   => $this->stock_quantity,
+            'is_active'        => $this->is_active,
         ];
     }
 }

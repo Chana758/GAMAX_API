@@ -42,7 +42,8 @@ class FixCatalogCommandTest extends TestCase
         ]);
         $this->product('monitors', 'Samsung', 'Samsung Odyssey G9 49"', 'samsung-odyssey-g9-49', [
             ['Samsung Odyssey G9 49" · QLED 120Hz', ['panel' => 'QLED', 'refresh' => '120Hz'], 1199.99],
-            ['Samsung Odyssey G9 49" · QLED 240Hz', ['panel' => 'QLED', 'refresh' => '240Hz'], 1399.99, 0],
+            // Out-of-stock copy: hidden by the 2026_11_09_110300 migration (same title as the next one)
+            ['Samsung Odyssey G9 49" · QLED 240Hz', ['panel' => 'QLED', 'refresh' => '240Hz'], 1399.99, 0, null, false],
             ['Samsung Odyssey G9 49" · QLED 240Hz', ['panel' => 'QLED', 'refresh' => '240Hz'], 1499.99],
         ]);
         $this->product('graphic-cards', 'NVIDIA', 'NVIDIA GeForce RTX 4060 Ti 🔥 Deal', 'nvidia-geforce-rtx-4060-ti-deal', [
@@ -140,9 +141,10 @@ class FixCatalogCommandTest extends TestCase
             $this->assertContains($expected, $titles);
         }
 
-        // Clashing variants are reported, not renamed
+        // Clashing variants are reported, not renamed; hidden variants are left alone
         $this->assertContains('ASUS ROG Zephyrus G16', $titles);
         $this->assertSame(2, ProductVariant::where('title', 'Samsung Odyssey G9 49" · QLED 240Hz')->count());
+        $this->assertFalse(ProductVariant::where('price', 1399.99)->value('is_active'));
 
         // Options: clean keys, units, no storage on graphics cards
         $this->assertSame(['chip' => 'M3 Pro', 'ram' => '18GB', 'storage' => '512GB'],
@@ -157,7 +159,7 @@ class FixCatalogCommandTest extends TestCase
     {
         $this->artisan('catalog:fix')
             ->expectsOutputToContain('Needs your decision')
-            ->expectsOutputToContain('Samsung Odyssey G9')
+            ->doesntExpectOutputToContain('Samsung Odyssey G9') // the duplicate is hidden
             ->expectsOutputToContain('NVIDIA GeForce RTX 4060 Ti')
             ->expectsOutputToContain('ASUS ROG Zephyrus G14')
             ->expectsOutputToContain('same price $2499.99')
@@ -199,7 +201,7 @@ class FixCatalogCommandTest extends TestCase
         ]);
 
         foreach ($variants as $row) {
-            [$title, $config, $price, $stock, $sku] = $row + [3 => 10, 4 => null];
+            [$title, $config, $price, $stock, $sku, $active] = $row + [3 => 10, 4 => null, 5 => true];
 
             $product->variants()->create([
                 'title'          => $title,
@@ -208,6 +210,7 @@ class FixCatalogCommandTest extends TestCase
                 'stock_quantity' => $stock,
                 'in_stock'       => $stock > 0,
                 'sku'            => $sku,
+                'is_active'      => $active,
             ]);
         }
     }

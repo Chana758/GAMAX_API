@@ -2,11 +2,15 @@
 
 namespace App\Http\Requests;
 
+use App\Http\Requests\Concerns\ChecksDuplicateVariants;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class UpdateVariantRequest extends FormRequest
 {
+    use ChecksDuplicateVariants;
+
     public function authorize(): bool
     {
         return true; // Authorization is handled by ProductVariantPolicy in the controller.
@@ -36,7 +40,17 @@ class UpdateVariantRequest extends FormRequest
             'sku'      => ['sometimes', 'nullable', 'string', 'max:255', Rule::unique('product_variants', 'sku')->ignore($variant)],
             'price'    => ['sometimes', 'required', 'numeric', 'min:0', 'max:99999999.99'],
             'in_stock' => ['sometimes', 'boolean'],
+            // false = hide from the store (use this for variants that were already ordered)
+            'is_active' => ['sometimes', 'boolean'],
         ];
+    }
+
+    /** Runs after the rules above pass. */
+    public function after(): array
+    {
+        $variant = $this->route('variant');
+
+        return [fn (Validator $validator) => $this->checkDuplicates($validator, $variant->product_id, $variant)];
     }
 
     public function messages(): array
