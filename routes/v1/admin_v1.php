@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\V1\BrandAdminController;
 use App\Http\Controllers\Admin\V1\CategoryAdminController;
 use App\Http\Controllers\Admin\V1\ImageUploadController;
+use App\Http\Controllers\Admin\V1\OrderAdminController;
 use App\Http\Controllers\Admin\V1\ProductAdminController;
 use App\Http\Controllers\Admin\V1\ProductVariantAdminController;
 use Illuminate\Support\Facades\Route;
@@ -26,4 +27,9 @@ Route::prefix('admin')
         Route::apiResource('brands', BrandAdminController::class);
         Route::apiResource('products', ProductAdminController::class);
         Route::apiResource('products.variants', ProductVariantAdminController::class)->shallow();
+
+        // Orders: no create/delete for staff (orders come from customers and are kept for records)
+        Route::get('orders',                  [OrderAdminController::class, 'index']);
+        Route::get('orders/{order:number}',   [OrderAdminController::class, 'show']);
+        Route::patch('orders/{order:number}', [OrderAdminController::class, 'update']);
     });

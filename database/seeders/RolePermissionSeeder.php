@@ -18,6 +18,9 @@ class RolePermissionSeeder extends Seeder
 
     private const ACTIONS = ['view', 'create', 'update', 'delete'];
 
+    /** Orders are placed by customers and never deleted: staff can only view and update them. */
+    private const ORDER_PERMISSIONS = ['order.view', 'order.update'];
+
     public function run(): void
     {
         // Clear Spatie's cached roles/permissions
@@ -30,6 +33,9 @@ class RolePermissionSeeder extends Seeder
                     ['name' => "{$resource}.{$action}", 'guard_name' => 'web']
                 )->name;
             }
+        }
+        foreach (self::ORDER_PERMISSIONS as $name) {
+            $all[] = Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web'])->name;
         }
 
         $admin = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);

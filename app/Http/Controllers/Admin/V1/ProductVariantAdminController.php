@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreVariantRequest;
 use App\Http\Requests\UpdateVariantRequest;
 use App\Http\Resources\ProductVariantResource;
+use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Services\ProductVariantService;
@@ -87,6 +88,14 @@ class ProductVariantAdminController extends Controller
     public function destroy(ProductVariant $variant): JsonResponse
     {
         $this->authorize('delete', $variant);
+
+        // Ordered variants are kept for order history (the database refuses too)
+        if (OrderItem::where('product_variant_id', $variant->id)->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This variant has been ordered, so it is kept for order history. Untick "Visible in the store" to hide it instead.',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
 
         try {
             $this->variantService->delete($variant);
