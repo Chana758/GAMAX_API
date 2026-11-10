@@ -61,8 +61,27 @@ return [
     // Provinces where Cash on Delivery is not offered, e.g. ['Mondulkiri']
     'cod_excluded_provinces' => [],
 
-    // Payment methods customers can choose now. Add 'khqr' / 'aba' once they are connected.
-    'payment_methods' => ['cod'],
+    // Payment methods shown at checkout, in this order.
+    // ('aba' card payments need an ABA PayWay merchant account first.)
+    'payment_methods' => ['khqr', 'cod'],
+
+    // true = orders paid by KHQR ship free (an incentive to pay online). Business decision.
+    'free_shipping_for_prepaid' => false,
+
+    /*
+    | KHQR: after ordering, the customer scans the shop's QR (storefront file
+    | src/assets/Images/QR.jpg), pays, and taps "I've paid". Staff check the bank
+    | app and mark the order paid, which confirms it.
+    | The current QR is SAM CHANNA's static ACLEDA QR in riel: it holds no amount,
+    | so the customer types the riel amount shown on the payment screen.
+    */
+    'khqr' => [
+        'account_name'     => 'SAM CHANNA',  // shown under the QR so customers know they pay the right shop
+        'bank'             => 'ACLEDA',
+        'currency'         => 'KHR',         // currency of the QR: KHR (riel) or USD
+        'khr_per_usd'      => 4100,          // !! SAMPLE exchange rate: set the shop's own rate
+        'pay_within_hours' => 24,            // unpaid KHQR orders are cancelled after this (stock goes back)
+    ],
 
     // Highest order total accepted as Cash on Delivery (null = no limit)
     'cod_max_total' => null,

@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Order extends Model
 {
-    // Prepaid orders waiting for payment (KHQR / ABA, later)
+    // KHQR orders waiting for the customer's payment
     public const PENDING = 'pending';
     // COD orders: the shop calls the customer before shipping
     public const PENDING_CONFIRMATION = 'pending_confirmation';
@@ -34,15 +34,18 @@ class Order extends Model
         self::CANCELLED            => [],
     ];
 
-    /** Customers can cancel by themselves until the order ships. */
+    /** Customers can cancel by themselves until the order ships (and before they have paid). */
     public const CUSTOMER_CANCELLABLE = [
         self::PENDING, self::PENDING_CONFIRMATION, self::CONFIRMED, self::PROCESSING,
     ];
 
     public const PAYMENT_UNPAID = 'unpaid';
+    public const PAYMENT_SUBMITTED = 'submitted';   // customer says "I've paid", staff still have to check
     public const PAYMENT_PAID = 'paid';
     public const PAYMENT_REFUNDED = 'refunded';
-    public const PAYMENT_STATUSES = [self::PAYMENT_UNPAID, self::PAYMENT_PAID, self::PAYMENT_REFUNDED];
+    public const PAYMENT_STATUSES = [
+        self::PAYMENT_UNPAID, self::PAYMENT_SUBMITTED, self::PAYMENT_PAID, self::PAYMENT_REFUNDED,
+    ];
 
     protected $fillable = [
         'number',
@@ -61,6 +64,12 @@ class Order extends Model
         'shipping_fee',
         'cod_fee',
         'total',
+        'payment_amount',
+        'payment_currency',
+        'payment_reference',
+        'payment_due_at',
+        'payment_submitted_at',
+        'paid_at',
         'tracking_number',
         'cancel_reason',
         'cancelled_by',
@@ -77,6 +86,10 @@ class Order extends Model
         'shipping_fee' => 'decimal:2',
         'cod_fee'      => 'decimal:2',
         'total'        => 'decimal:2',
+        'payment_amount'       => 'decimal:2',
+        'payment_due_at'       => 'datetime',
+        'payment_submitted_at' => 'datetime',
+        'paid_at'              => 'datetime',
         'confirmed_at' => 'datetime',
         'shipped_at'   => 'datetime',
         'delivered_at' => 'datetime',
@@ -93,9 +106,20 @@ class Order extends Model
         return $this->hasMany(OrderItem::class)->orderBy('id');
     }
 
+    /** Money already sent: the shop handles the cancellation (and the refund). */
     public function canBeCancelledByCustomer(): bool
     {
-        return in_array($this->status, self::CUSTOMER_CANCELLABLE, true);
+        return in_array($this->status, self::CUSTOMER_CANCELLABLE, true)
+            && ! in_array($this->payment_status, [self::PAYMENT_SUBMITTED, self::PAYMENT_PAID], true);
+    }
+
+    /** KHQR order that still waits for the customer's payment. */
+    public function awaitsPayment(): bool
+    {
+        return $this->payment_method !== 'cod'
+            && $this->status === self::PENDING
+            && $this->payment_status === self::PAYMENT_UNPAID
+            && ($this->payment_due_at === null || $this->payment_due_at->isFuture());
     }
 
     public function canMoveTo(string $status): bool

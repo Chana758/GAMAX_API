@@ -42,10 +42,13 @@ class ShopRules
     }
 
     /** Delivery fee for an order whose items cost $itemsCents. */
-    public static function shippingFeeCents(int $itemsCents, string $province): int
+    public static function shippingFeeCents(int $itemsCents, string $province, string $paymentMethod = 'cod'): int
     {
         $freeOver = self::freeShippingOverCents();
         if ($freeOver > 0 && $itemsCents >= $freeOver) {
+            return 0;
+        }
+        if ($paymentMethod !== 'cod' && config('shop.free_shipping_for_prepaid', false)) {
             return 0;
         }
 
@@ -69,6 +72,31 @@ class ShopRules
         return (int) config('shop.max_quantity_per_item', 10);
     }
 
+    /**
+     * What the customer must transfer for a KHQR order: [amount, currency].
+     * Riel is rounded UP to the next 100 riel (the smallest note in use).
+     */
+    public static function khqrAmount(int $totalCents): array
+    {
+        if (self::khqrCurrency() !== 'KHR') {
+            return [self::dollars($totalCents), 'USD'];
+        }
+
+        $riel = $totalCents * (int) config('shop.khqr.khr_per_usd', 4100) / 100;
+
+        return [(float) (ceil($riel / 100) * 100), 'KHR'];
+    }
+
+    public static function khqrCurrency(): string
+    {
+        return strtoupper((string) config('shop.khqr.currency', 'USD'));
+    }
+
+    public static function payWithinHours(): int
+    {
+        return max((int) config('shop.khqr.pay_within_hours', 24), 1);
+    }
+
     public static function cents($amount): int
     {
         return (int) round(((float) $amount) * 100);
@@ -88,6 +116,14 @@ class ShopRules
             'payment_methods'        => self::paymentMethods(),
             'cod_max_total'          => config('shop.cod_max_total') === null ? null : (float) config('shop.cod_max_total'),
             'max_quantity_per_item'  => self::maxQuantityPerItem(),
+            'free_shipping_for_prepaid' => (bool) config('shop.free_shipping_for_prepaid', false),
+            'khqr'                   => [
+                'account_name'     => config('shop.khqr.account_name'),
+                'bank'             => config('shop.khqr.bank'),
+                'currency'         => self::khqrCurrency(),
+                'khr_per_usd'      => (int) config('shop.khqr.khr_per_usd', 4100),
+                'pay_within_hours' => self::payWithinHours(),
+            ],
             'provinces'              => collect(self::provinces())->map(function (string $name) {
                 $zone = self::zone($name);
 

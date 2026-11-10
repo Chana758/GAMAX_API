@@ -19,7 +19,7 @@ class AdminOrderTest extends TestCase
     {
         parent::setUp();
         $this->seedRoles();
-        config(['shop.payment_methods' => ['cod']]);
+        config(['shop.payment_methods' => ['khqr', 'cod']]);
         $this->variantId = $this->firstVariantId($this->makeProduct([], [['price' => 100, 'stock_quantity' => 3]]));
     }
 

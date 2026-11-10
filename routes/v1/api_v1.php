@@ -53,4 +53,5 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('orders',                       [OrderController::class, 'store'])->middleware('throttle:10,1');
     Route::get('orders/{order:number}',         [OrderController::class, 'show']);
     Route::post('orders/{order:number}/cancel', [OrderController::class, 'cancel'])->middleware('throttle:10,1');
+    Route::post('orders/{order:number}/payment', [OrderController::class, 'reportPayment'])->middleware('throttle:10,1'); // "I've paid" (KHQR)
 });

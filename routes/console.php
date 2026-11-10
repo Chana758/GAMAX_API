@@ -11,3 +11,6 @@ Artisan::command('inspire', function () {
 
 // Remove orphan uploads every night at 03:00
 Schedule::command('images:cleanup-orphans')->dailyAt('03:00');
+
+// KHQR orders not paid in time are cancelled and their stock goes back
+Schedule::command('orders:cancel-unpaid')->everyFifteenMinutes()->withoutOverlapping();

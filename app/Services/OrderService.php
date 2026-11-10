@@ -63,10 +63,13 @@ class OrderService
             }
             ProductVariant::whereKey(array_keys($lines))->where('stock_quantity', '<=', 0)->update(['in_stock' => false]);
 
+            $isCod = $data['payment_method'] === 'cod';
+
             $order = Order::create([
                 'number'         => Order::newNumber(),
                 'user_id'        => $user->id,
-                'status'         => $data['payment_method'] === 'cod' ? Order::PENDING_CONFIRMATION : Order::PENDING,
+                // COD: the shop calls first. KHQR: waits for the customer's payment.
+                'status'         => $isCod ? Order::PENDING_CONFIRMATION : Order::PENDING,
                 'payment_method' => $data['payment_method'],
                 'payment_status' => Order::PAYMENT_UNPAID,
                 'ship_name'      => $address->full_name,
@@ -80,6 +83,9 @@ class OrderService
                 'shipping_fee'   => $quote['shipping_fee'],
                 'cod_fee'        => $quote['cod_fee'],
                 'total'          => $quote['total'],
+                'payment_amount'   => $quote['payment_amount'],
+                'payment_currency' => $quote['payment_currency'],
+                'payment_due_at'   => $isCod ? null : now()->addHours(ShopRules::payWithinHours()),
             ]);
 
             foreach ($quote['items'] as $line) {
@@ -125,6 +131,70 @@ class OrderService
         });
     }
 
+    /** Customer tapped "I've paid" on a KHQR order. Staff still check the bank app. */
+    public function reportPayment(Order $order, ?string $reference): Order
+    {
+        return DB::transaction(function () use ($order, $reference) {
+            $order = Order::whereKey($order->id)->lockForUpdate()->firstOrFail();
+
+            $waiting = $order->payment_method !== 'cod'
+                && $order->status === Order::PENDING
+                && in_array($order->payment_status, [Order::PAYMENT_UNPAID, Order::PAYMENT_SUBMITTED], true);
+
+            if (! $waiting) {
+                throw ValidationException::withMessages([
+                    'payment' => 'This order is not waiting for a payment. Please contact us if you have paid.',
+                ]);
+            }
+
+            $order->update([
+                'payment_status'       => Order::PAYMENT_SUBMITTED,
+                'payment_submitted_at' => $order->payment_submitted_at ?? now(),
+                'payment_reference'    => $reference ?: $order->payment_reference,
+            ]);
+
+            return $order->load('items.product:id,slug');
+        });
+    }
+
+    /**
+     * KHQR orders not paid before their deadline are cancelled and their stock goes back.
+     * Orders where the customer tapped "I've paid" are left for staff to check.
+     * Runs every 15 minutes (routes/console.php). Returns how many were cancelled.
+     */
+    public function cancelOverdueUnpaid(): int
+    {
+        $cancelled = 0;
+
+        $ids = Order::where('status', Order::PENDING)
+            ->where('payment_status', Order::PAYMENT_UNPAID)
+            ->where('payment_due_at', '<', now())
+            ->orderBy('id')
+            ->pluck('id');
+
+        foreach ($ids as $id) {
+            DB::transaction(function () use ($id, &$cancelled) {
+                $order = Order::whereKey($id)->lockForUpdate()->first();
+
+                // Paid or reported meanwhile: leave it
+                if (! $order || $order->status !== Order::PENDING || $order->payment_status !== Order::PAYMENT_UNPAID) {
+                    return;
+                }
+
+                $this->restock($order);
+                $order->update([
+                    'status'        => Order::CANCELLED,
+                    'cancelled_at'  => now(),
+                    'cancelled_by'  => 'system',
+                    'cancel_reason' => 'Not paid in time.',
+                ]);
+                $cancelled++;
+            });
+        }
+
+        return $cancelled;
+    }
+
     /** Staff: change status, tracking number, payment status or the internal note. */
     public function updateByStaff(Order $order, array $data): Order
     {
@@ -132,7 +202,19 @@ class OrderService
             $order = Order::whereKey($order->id)->lockForUpdate()->firstOrFail();
             $changes = array_intersect_key($data, array_flip(['tracking_number', 'payment_status', 'admin_note']));
 
+            $paymentTo = $data['payment_status'] ?? $order->payment_status;
             $to = $data['status'] ?? $order->status;
+
+            // Money seen in the bank app: a KHQR order waiting for payment is confirmed at the same time
+            if ($order->status === Order::PENDING && $paymentTo === Order::PAYMENT_PAID && ! isset($data['status'])) {
+                $to = Order::CONFIRMED;
+            }
+            // Confirming a KHQR order means the money arrived
+            if ($order->status === Order::PENDING && $to === Order::CONFIRMED && $order->payment_method !== 'cod'
+                && ! isset($data['payment_status'])) {
+                $paymentTo = Order::PAYMENT_PAID;
+            }
+
             if ($to !== $order->status) {
                 if (! $order->canMoveTo($to)) {
                     throw ValidationException::withMessages([
@@ -154,7 +236,7 @@ class OrderService
                     $changes['delivered_at'] = $now;
                     // COD: the courier collected the money
                     if ($order->payment_method === 'cod' && ! array_key_exists('payment_status', $data)) {
-                        $changes['payment_status'] = Order::PAYMENT_PAID;
+                        $paymentTo = Order::PAYMENT_PAID;
                     }
                 }
                 if ($to === Order::CANCELLED) {
@@ -162,6 +244,13 @@ class OrderService
                     $changes['cancelled_at'] = $now;
                     $changes['cancelled_by'] = 'staff';
                     $changes['cancel_reason'] = $data['cancel_reason'] ?? null;
+                }
+            }
+
+            if ($paymentTo !== $order->payment_status) {
+                $changes['payment_status'] = $paymentTo;
+                if ($paymentTo === Order::PAYMENT_PAID) {
+                    $changes['paid_at'] = now();
                 }
             }
 
@@ -267,7 +356,7 @@ class OrderService
         }
 
         $discountCents = 0; // coupons come later
-        $shippingCents = ShopRules::shippingFeeCents($itemsCents - $discountCents, $province);
+        $shippingCents = ShopRules::shippingFeeCents($itemsCents - $discountCents, $province, $paymentMethod);
         $codCents = ShopRules::codFeeCents($paymentMethod, $province);
         $totalCents = $itemsCents - $discountCents + $shippingCents + $codCents;
 
@@ -278,9 +367,14 @@ class OrderService
             ]);
         }
 
+        // KHQR: what the customer types in the bank app (riel for the shop's current QR)
+        [$payAmount, $payCurrency] = $paymentMethod === 'cod' ? [null, null] : ShopRules::khqrAmount($totalCents);
+
         return [
-            'items'          => $items,
-            'payment_method' => $paymentMethod,
+            'items'            => $items,
+            'payment_method'   => $paymentMethod,
+            'payment_amount'   => $payAmount,
+            'payment_currency' => $payCurrency,
             'province'       => $province,
             'delivery_days'  => ShopRules::zone($province)['delivery_days'],
             'subtotal'       => ShopRules::dollars($itemsCents),

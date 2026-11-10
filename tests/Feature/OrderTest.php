@@ -24,7 +24,8 @@ class OrderTest extends TestCase
             'shop.free_shipping_over' => 50,
             'shop.zones.capital'      => ['shipping_fee' => 2, 'cod_fee' => 0, 'delivery_days' => '1-3'],
             'shop.zones.far'          => ['shipping_fee' => 7, 'cod_fee' => 3, 'delivery_days' => '3-5'],
-            'shop.payment_methods'    => ['cod'],
+            'shop.payment_methods'    => ['khqr', 'cod'],
+            'shop.free_shipping_for_prepaid' => false,
             'shop.cod_max_total'      => null,
             'shop.cod_excluded_provinces' => [],
             'shop.max_quantity_per_item'  => 10,
@@ -35,7 +36,7 @@ class OrderTest extends TestCase
     {
         $this->getJson('/api/v1/settings')
             ->assertOk()
-            ->assertJsonPath('data.payment_methods', ['cod'])
+            ->assertJsonPath('data.payment_methods', ['khqr', 'cod'])
             ->assertJsonPath('data.free_shipping_over', 50)
             ->assertJsonPath('data.provinces.0.name', 'Phnom Penh')
             ->assertJsonPath('data.provinces.0.shipping_fee', 2);
@@ -145,8 +146,8 @@ class OrderTest extends TestCase
         $otherAddress = $this->makeAddress(User::factory()->create());
         $variantId = $this->firstVariantId($this->makeProduct([], [['price' => 100, 'stock_quantity' => 50]]));
 
-        // KHQR is not connected yet
-        $this->postJson('/api/v1/orders', $this->checkout($address->id, [[$variantId, 1]], ['payment_method' => 'khqr']))
+        // ABA PayWay cards are not connected
+        $this->postJson('/api/v1/orders', $this->checkout($address->id, [[$variantId, 1]], ['payment_method' => 'aba']))
             ->assertUnprocessable()->assertJsonValidationErrors('payment_method');
 
         // Someone else's address

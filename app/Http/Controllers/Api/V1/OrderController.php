@@ -85,6 +85,21 @@ class OrderController extends Controller
         ]);
     }
 
+    /** POST /orders/{number}/payment  { reference?: string } — "I've paid" for a KHQR order */
+    public function reportPayment(Request $request, Order $order): JsonResponse
+    {
+        $this->ensureOwner($request, $order);
+        $data = $request->validate(['reference' => ['nullable', 'string', 'max:100']]);
+
+        $order = $this->orders->reportPayment($order, isset($data['reference']) ? trim($data['reference']) : null);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Thank you! We will check your payment and confirm your order.',
+            'data'    => new OrderResource($order),
+        ]);
+    }
+
     /** Someone else's order answers 404, so order numbers can't be probed. */
     private function ensureOwner(Request $request, Order $order): void
     {

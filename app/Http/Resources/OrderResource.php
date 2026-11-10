@@ -22,6 +22,14 @@ class OrderResource extends JsonResource
             'shipping_fee'    => (float) $this->shipping_fee,
             'cod_fee'         => (float) $this->cod_fee,
             'total'           => (float) $this->total,
+            // KHQR: exact amount to transfer (riel for the shop's current QR) and the deadline
+            'payment_amount'       => $this->payment_amount !== null ? (float) $this->payment_amount : null,
+            'payment_currency'     => $this->payment_currency,
+            'payment_reference'    => $this->payment_reference,
+            'payment_due_at'       => $this->payment_due_at?->toIso8601String(),
+            'payment_submitted_at' => $this->payment_submitted_at?->toIso8601String(),
+            'paid_at'              => $this->paid_at?->toIso8601String(),
+            'awaits_payment'       => $this->awaitsPayment(),
             'item_count'      => $this->relationLoaded('items')
                 ? (int) $this->items->sum('quantity')
                 : (int) ($this->items_sum_quantity ?? 0),
