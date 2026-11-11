@@ -3,16 +3,6 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Two visible variants of one product may not share a title
- * (in the cart the customer could not tell them apart).
- * Hidden variants (is_active = false) are ignored, so an old variant can be
- * hidden and a new one with the same name created.
- *
- * Existing duplicates: an out-of-stock copy is hidden automatically (nothing is
- * deleted — switch it back on in Admin > Products > Variants). Duplicates that are
- * both in stock stop the migration with a message, because a person must choose.
- */
 return new class extends Migration
 {
     private const INDEX = 'product_variants_product_id_title_active_unique';

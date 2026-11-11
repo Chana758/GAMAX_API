@@ -19,6 +19,10 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class OrderService
 {
+    public function __construct(private readonly OrderPaymentService $payments)
+    {
+    }
+
     /** Totals for the checkout review step. Saves nothing. */
     public function quote(User $user, array $data): array
     {
@@ -85,6 +89,7 @@ class OrderService
                 'total'          => $quote['total'],
                 'payment_amount'   => $quote['payment_amount'],
                 'payment_currency' => $quote['payment_currency'],
+                'payment_exchange_rate' => $quote['payment_exchange_rate'],
                 'payment_due_at'   => $isCod ? null : now()->addHours(ShopRules::payWithinHours()),
             ]);
 
@@ -195,25 +200,29 @@ class OrderService
         return $cancelled;
     }
 
-    /** Staff: change status, tracking number, payment status or the internal note. */
-    public function updateByStaff(Order $order, array $data): Order
+    /**
+     * Staff: change status, tracking number or the internal note.
+     * Money is never set by hand here: it becomes a payment row (OrderPaymentService).
+     */
+    public function updateByStaff(Order $order, array $data, ?User $staff = null): Order
     {
-        return DB::transaction(function () use ($order, $data) {
+        return DB::transaction(function () use ($order, $data, $staff) {
             $order = Order::whereKey($order->id)->lockForUpdate()->firstOrFail();
-            $changes = array_intersect_key($data, array_flip(['tracking_number', 'payment_status', 'admin_note']));
+            $changes = array_intersect_key($data, array_flip(['tracking_number', 'admin_note']));
 
-            $paymentTo = $data['payment_status'] ?? $order->payment_status;
+            // Contact / address corrections (e.g. after the confirmation call), only before shipping
+            $contact = array_intersect_key($data, array_flip(['ship_name', 'ship_phone', 'ship_email', 'ship_address']));
+            if ($contact) {
+                if (in_array($order->status, [Order::SHIPPED, Order::DELIVERED, Order::CANCELLED], true)) {
+                    throw ValidationException::withMessages([
+                        'ship_address' => "The customer's details can't change once the order is {$order->status}.",
+                    ]);
+                }
+                $changes += $contact;
+            }
+            $collect = null; // payment to add for the balance, after the status change
+
             $to = $data['status'] ?? $order->status;
-
-            // Money seen in the bank app: a KHQR order waiting for payment is confirmed at the same time
-            if ($order->status === Order::PENDING && $paymentTo === Order::PAYMENT_PAID && ! isset($data['status'])) {
-                $to = Order::CONFIRMED;
-            }
-            // Confirming a KHQR order means the money arrived
-            if ($order->status === Order::PENDING && $to === Order::CONFIRMED && $order->payment_method !== 'cod'
-                && ! isset($data['payment_status'])) {
-                $paymentTo = Order::PAYMENT_PAID;
-            }
 
             if ($to !== $order->status) {
                 if (! $order->canMoveTo($to)) {
@@ -227,6 +236,11 @@ class OrderService
 
                 if ($to === Order::CONFIRMED) {
                     $changes['confirmed_at'] = $now;
+                    // Confirming a KHQR order waiting for its money means staff saw the money arrive
+                    if ($order->status === Order::PENDING && $order->payment_method !== 'cod') {
+                        $collect = ['method' => $order->payment_method, 'note' => 'Payment confirmed by staff']
+                            + $this->khqrMoneyDue($order);
+                    }
                 }
                 if ($to === Order::SHIPPED) {
                     $changes['confirmed_at'] = $order->confirmed_at ?? $now;
@@ -235,8 +249,8 @@ class OrderService
                 if ($to === Order::DELIVERED) {
                     $changes['delivered_at'] = $now;
                     // COD: the courier collected the money
-                    if ($order->payment_method === 'cod' && ! array_key_exists('payment_status', $data)) {
-                        $paymentTo = Order::PAYMENT_PAID;
+                    if ($order->payment_method === 'cod') {
+                        $collect = ['method' => 'cod', 'note' => 'Collected on delivery'];
                     }
                 }
                 if ($to === Order::CANCELLED) {
@@ -247,17 +261,34 @@ class OrderService
                 }
             }
 
-            if ($paymentTo !== $order->payment_status) {
-                $changes['payment_status'] = $paymentTo;
-                if ($paymentTo === Order::PAYMENT_PAID) {
-                    $changes['paid_at'] = now();
-                }
-            }
-
             $order->update($changes);
 
-            return $order->load(['items.product:id,slug', 'user:id,name,email,phone']);
+            // Record the money still due (nothing if it was already recorded, e.g. paid at the counter)
+            if ($collect && $order->balanceDue() > 0) {
+                $this->payments->addWithinLock($order, $collect + ['currency' => 'USD', 'amount' => $order->balanceDue()], $staff);
+            }
+
+            return $order->load(['items.product:id,slug', 'user:id,name,email,phone', 'payments.recorder:id,name']);
         });
+    }
+
+    /**
+     * A KHQR order asked in riel is paid in riel: record the riel amount and the rate
+     * the customer was given (the full amount if nothing was paid yet). Empty for USD.
+     */
+    private function khqrMoneyDue(Order $order): array
+    {
+        if ($order->payment_currency !== 'KHR') {
+            return [];
+        }
+
+        $rate = (float) ($order->payment_exchange_rate ?: config('shop.khqr.khr_per_usd', 4100));
+        $nothingPaidYet = (float) $order->amount_paid <= 0 && $order->payment_amount;
+        $riel = $nothingPaidYet
+            ? (float) $order->payment_amount                         // exactly what the customer was asked
+            : ceil($order->balanceDue() * $rate / 100) * 100;        // the rest, rounded up to 100 riel
+
+        return ['currency' => 'KHR', 'amount_received' => $riel, 'exchange_rate' => $rate];
     }
 
     /** Put the units of a cancelled order back on the shelf. */
@@ -367,14 +398,15 @@ class OrderService
             ]);
         }
 
-        // KHQR: what the customer types in the bank app (riel for the shop's current QR)
-        [$payAmount, $payCurrency] = $paymentMethod === 'cod' ? [null, null] : ShopRules::khqrAmount($totalCents);
+        // KHQR: what the customer types in the bank app, and the riel rate used (if any)
+        [$payAmount, $payCurrency, $payRate] = $paymentMethod === 'cod' ? [null, null, null] : ShopRules::khqrAmount($totalCents);
 
         return [
             'items'            => $items,
             'payment_method'   => $paymentMethod,
             'payment_amount'   => $payAmount,
             'payment_currency' => $payCurrency,
+            'payment_exchange_rate' => $payRate,
             'province'       => $province,
             'delivery_days'  => ShopRules::zone($province)['delivery_days'],
             'subtotal'       => ShopRules::dollars($itemsCents),

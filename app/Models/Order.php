@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -39,13 +40,23 @@ class Order extends Model
         self::PENDING, self::PENDING_CONFIRMATION, self::CONFIRMED, self::PROCESSING,
     ];
 
+    // Money state, worked out from the payment rows (OrderPaymentService::refreshTotals)
     public const PAYMENT_UNPAID = 'unpaid';
     public const PAYMENT_SUBMITTED = 'submitted';   // customer says "I've paid", staff still have to check
+    public const PAYMENT_PARTIAL = 'partially_paid';
     public const PAYMENT_PAID = 'paid';
+    public const PAYMENT_OVERPAID = 'overpaid';     // more money came in than the total: refund the difference
     public const PAYMENT_REFUNDED = 'refunded';
     public const PAYMENT_STATUSES = [
-        self::PAYMENT_UNPAID, self::PAYMENT_SUBMITTED, self::PAYMENT_PAID, self::PAYMENT_REFUNDED,
+        self::PAYMENT_UNPAID, self::PAYMENT_SUBMITTED, self::PAYMENT_PARTIAL,
+        self::PAYMENT_PAID, self::PAYMENT_OVERPAID, self::PAYMENT_REFUNDED,
     ];
+
+    // Where the order was made
+    public const CHANNELS = ['web', 'store', 'telegram', 'facebook', 'phone'];
+
+    // How the customer gets it
+    public const FULFILLMENTS = ['delivery', 'pickup'];
 
     protected $fillable = [
         'number',
@@ -66,10 +77,15 @@ class Order extends Model
         'total',
         'payment_amount',
         'payment_currency',
+        'payment_exchange_rate',
         'payment_reference',
         'payment_due_at',
         'payment_submitted_at',
         'paid_at',
+        'channel',
+        'fulfillment',
+        'created_by',
+        'amount_paid',
         'tracking_number',
         'cancel_reason',
         'cancelled_by',
@@ -87,9 +103,11 @@ class Order extends Model
         'cod_fee'      => 'decimal:2',
         'total'        => 'decimal:2',
         'payment_amount'       => 'decimal:2',
+        'payment_exchange_rate' => 'decimal:4',
         'payment_due_at'       => 'datetime',
         'payment_submitted_at' => 'datetime',
         'paid_at'              => 'datetime',
+        'amount_paid'          => 'decimal:2',
         'confirmed_at' => 'datetime',
         'shipped_at'   => 'datetime',
         'delivered_at' => 'datetime',
@@ -106,11 +124,53 @@ class Order extends Model
         return $this->hasMany(OrderItem::class)->orderBy('id');
     }
 
-    /** Money already sent: the shop handles the cancellation (and the refund). */
+    public function payments(): HasMany
+    {
+        return $this->hasMany(Payment::class)->orderBy('id');
+    }
+
+    /** Staff member who created the order (counter / Telegram / phone sales). */
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /** Staff lists: COD orders waiting for the confirmation call. */
+    public function scopeToCall(Builder $query): Builder
+    {
+        return $query->where('status', self::PENDING_CONFIRMATION);
+    }
+
+    /** KHQR orders where the customer says "I've paid": check the bank app. */
+    public function scopePaymentToCheck(Builder $query): Builder
+    {
+        return $query->where('status', self::PENDING)->where('payment_status', self::PAYMENT_SUBMITTED);
+    }
+
+    /** Money to give back: overpaid, or cancelled while money is still held. */
+    public function scopeNeedsRefund(Builder $query): Builder
+    {
+        return $query->where(fn ($q) => $q->where('payment_status', self::PAYMENT_OVERPAID)
+            ->orWhere(fn ($q) => $q->where('status', self::CANCELLED)->where('amount_paid', '>', 0)));
+    }
+
+    /** Confirmed, waiting to be packed / shipped. */
+    public function scopeToShip(Builder $query): Builder
+    {
+        return $query->whereIn('status', [self::CONFIRMED, self::PROCESSING]);
+    }
+
+    /** Still to collect, in USD (negative = overpaid). */
+    public function balanceDue(): float
+    {
+        return round((float) $this->total - (float) $this->amount_paid, 2);
+    }
+
+    /** Once any money was sent, the shop handles the cancellation (and the refund). */
     public function canBeCancelledByCustomer(): bool
     {
         return in_array($this->status, self::CUSTOMER_CANCELLABLE, true)
-            && ! in_array($this->payment_status, [self::PAYMENT_SUBMITTED, self::PAYMENT_PAID], true);
+            && $this->payment_status === self::PAYMENT_UNPAID;
     }
 
     /** KHQR order that still waits for the customer's payment. */

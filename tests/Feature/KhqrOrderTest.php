@@ -66,13 +66,15 @@ class KhqrOrderTest extends TestCase
             ->assertJsonPath('data.cod_fee', 0)
             ->assertJsonPath('data.total', 21.99)
             ->assertJsonPath('data.payment_amount', 90200)
-            ->assertJsonPath('data.payment_currency', 'KHR');
+            ->assertJsonPath('data.payment_currency', 'KHR')
+            ->assertJsonPath('data.payment_exchange_rate', 4100);
 
         $response = $this->postJson('/api/v1/orders', $body)
             ->assertCreated()
             ->assertJsonPath('data.status', Order::PENDING)
             ->assertJsonPath('data.payment_status', 'unpaid')
             ->assertJsonPath('data.payment_amount', 90200)
+            ->assertJsonPath('data.payment_exchange_rate', 4100)
             ->assertJsonPath('data.awaits_payment', true)
             ->assertJsonPath('data.can_cancel', true);
 
@@ -132,10 +134,18 @@ class KhqrOrderTest extends TestCase
         $this->postJson("/api/v1/orders/{$number}/payment")->assertOk();
 
         $this->actingAsRole('staff');
-        $this->patchJson("/api/v1/admin/orders/{$number}", ['payment_status' => 'paid'])
-            ->assertOk()
+        // 90,200 riel at 4,100 = $22.00; within one 100-riel step of $21.99, so it counts as exact
+        $this->postJson("/api/v1/admin/orders/{$number}/payments", [
+            'method' => 'khqr', 'currency' => 'KHR', 'amount_received' => 90200, 'exchange_rate' => 4100,
+            'payer_account' => 'dara@aba', 'reference' => 'a1b2c3d4',
+        ])
+            ->assertCreated()
             ->assertJsonPath('data.status', Order::CONFIRMED)
-            ->assertJsonPath('data.payment_status', Order::PAYMENT_PAID);
+            ->assertJsonPath('data.payment_status', Order::PAYMENT_PAID)
+            ->assertJsonPath('data.payments.0.amount', 21.99)
+            ->assertJsonPath('data.payments.0.amount_received', 90200)
+            ->assertJsonPath('data.payments.0.exchange_rate', 4100)
+            ->assertJsonPath('data.payments.0.provider', 'bakong');
 
         $order = Order::where('number', $number)->first();
         $this->assertNotNull($order->paid_at);
@@ -149,7 +159,12 @@ class KhqrOrderTest extends TestCase
         $this->actingAsRole('staff');
         $this->patchJson("/api/v1/admin/orders/{$number}", ['status' => 'confirmed'])
             ->assertOk()
-            ->assertJsonPath('data.payment_status', Order::PAYMENT_PAID);
+            ->assertJsonPath('data.payment_status', Order::PAYMENT_PAID)
+            // Recorded in riel at the rate the customer was given
+            ->assertJsonPath('data.payments.0.currency', 'KHR')
+            ->assertJsonPath('data.payments.0.amount_received', 90200)
+            ->assertJsonPath('data.payments.0.exchange_rate', 4100)
+            ->assertJsonPath('data.payments.0.amount', 21.99);
     }
 
     public function test_unpaid_orders_expire_and_the_stock_comes_back(): void

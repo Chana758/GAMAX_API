@@ -73,18 +73,20 @@ class ShopRules
     }
 
     /**
-     * What the customer must transfer for a KHQR order: [amount, currency].
-     * Riel is rounded UP to the next 100 riel (the smallest note in use).
+     * What the customer must transfer for a KHQR order: [amount, currency, exchange rate].
+     * Riel is rounded UP to the next 100 riel (the smallest note in use); the rate is
+     * returned so it can be stored with the order.
      */
     public static function khqrAmount(int $totalCents): array
     {
         if (self::khqrCurrency() !== 'KHR') {
-            return [self::dollars($totalCents), 'USD'];
+            return [self::dollars($totalCents), 'USD', null];
         }
 
-        $riel = $totalCents * (int) config('shop.khqr.khr_per_usd', 4100) / 100;
+        $rate = (float) config('shop.khqr.khr_per_usd', 4100);
+        $riel = $totalCents * $rate / 100;
 
-        return [(float) (ceil($riel / 100) * 100), 'KHR'];
+        return [(float) (ceil($riel / 100) * 100), 'KHR', $rate];
     }
 
     public static function khqrCurrency(): string

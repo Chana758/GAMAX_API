@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
 {
     Schema::table('product_variants', function (Blueprint $table) {
-        $table->decimal('compare_price', 10, 2)->nullable()->after('price'); // តម្លៃចាស់
+        $table->decimal('compare_price', 10, 2)->nullable()->after('price'); 
         $table->unsignedInteger('stock_quantity')->default(0)->after('in_stock');
     });
 }

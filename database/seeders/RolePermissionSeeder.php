@@ -21,6 +21,10 @@ class RolePermissionSeeder extends Seeder
     /** Orders are placed by customers and never deleted: staff can only view and update them. */
     private const ORDER_PERMISSIONS = ['order.view', 'order.update'];
 
+    /** Money: staff record what they receive; only admins give money back. */
+    private const PAYMENT_PERMISSIONS = ['payment.record', 'payment.refund'];
+    private const ADMIN_ONLY = ['payment.refund'];
+
     public function run(): void
     {
         // Clear Spatie's cached roles/permissions
@@ -34,7 +38,7 @@ class RolePermissionSeeder extends Seeder
                 )->name;
             }
         }
-        foreach (self::ORDER_PERMISSIONS as $name) {
+        foreach ([...self::ORDER_PERMISSIONS, ...self::PAYMENT_PERMISSIONS] as $name) {
             $all[] = Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web'])->name;
         }
 
@@ -42,9 +46,12 @@ class RolePermissionSeeder extends Seeder
         $staff = Role::firstOrCreate(['name' => 'staff', 'guard_name' => 'web']);
         Role::firstOrCreate(['name' => 'customer', 'guard_name' => 'web']);
 
-        // Admin: everything. Staff: everything except delete.
+        // Admin: everything. Staff: everything except delete and refunds.
         $admin->givePermissionTo($all);
-        $staff->givePermissionTo(array_filter($all, fn ($p) => ! str_ends_with($p, '.delete')));
+        $staff->givePermissionTo(array_filter(
+            $all,
+            fn ($p) => ! str_ends_with($p, '.delete') && ! in_array($p, self::ADMIN_ONLY, true)
+        ));
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
     }

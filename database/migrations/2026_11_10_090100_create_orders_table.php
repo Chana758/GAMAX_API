@@ -11,13 +11,13 @@ return new class extends Migration
     {
         Schema::create('orders', function (Blueprint $table) {
             $table->id();
-            $table->string('number', 30)->unique();                         // GMX-261110-7KQ2, shown to customers
+            $table->string('number', 30)->unique();                      
             // Orders are kept for the shop's records even if the customer account is deleted
             $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
 
             $table->string('status', 30)->default('pending_confirmation');
-            $table->string('payment_method', 20);                           // cod (khqr, aba later)
-            $table->string('payment_status', 20)->default('unpaid');        // unpaid, paid, refunded
+            $table->string('payment_method', 20);                          
+            $table->string('payment_status', 20)->default('unpaid');      
 
             // Copy of the delivery address at order time
             $table->string('ship_name', 100);
@@ -25,7 +25,7 @@ return new class extends Migration
             $table->string('ship_email')->nullable();
             $table->string('ship_province', 50);
             $table->string('ship_address', 500);
-            $table->string('note', 500)->nullable();                        // from the customer
+            $table->string('note', 500)->nullable();                       
 
             // Money (USD). Calculated by the server, never taken from the browser.
             $table->decimal('subtotal', 12, 2);
@@ -36,8 +36,8 @@ return new class extends Migration
 
             $table->string('tracking_number', 100)->nullable();
             $table->string('cancel_reason', 500)->nullable();
-            $table->string('cancelled_by', 20)->nullable();                 // customer, staff
-            $table->string('admin_note', 1000)->nullable();                 // staff only
+            $table->string('cancelled_by', 20)->nullable();                 
+            $table->string('admin_note', 1000)->nullable();              
 
             $table->timestamp('confirmed_at')->nullable();
             $table->timestamp('shipped_at')->nullable();
@@ -45,8 +45,8 @@ return new class extends Migration
             $table->timestamp('cancelled_at')->nullable();
             $table->timestamps();
 
-            $table->index(['user_id', 'created_at']);                       // "My orders"
-            $table->index(['status', 'created_at']);                        // admin list filtered by status
+            $table->index(['user_id', 'created_at']);                      
+            $table->index(['status', 'created_at']);                      
         });
 
         if (in_array(DB::getDriverName(), ['pgsql', 'mysql', 'mariadb'], true)) {

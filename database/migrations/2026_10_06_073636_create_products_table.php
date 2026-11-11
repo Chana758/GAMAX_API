@@ -11,11 +11,11 @@ return new class extends Migration
         Schema::create('products', function (Blueprint $table) {
             $table->id();
             $table->foreignId('category_id')->constrained()->restrictOnDelete();
-            $table->string('series');                 // "RTX 40", "MacBook"...
-            $table->string('name');                   // "NVIDIA GeForce RTX 4090"
+            $table->string('series');                
+            $table->string('name');                  
             $table->string('slug')->unique();
             $table->text('description')->nullable();
-            $table->string('image')->nullable();      // /images/pic1.png
+            $table->string('image')->nullable();     
             $table->boolean('is_active')->default(true);
             $table->timestamps();
         });

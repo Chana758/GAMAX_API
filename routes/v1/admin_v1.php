@@ -30,6 +30,14 @@ Route::prefix('admin')
 
         // Orders: no create/delete for staff (orders come from customers and are kept for records)
         Route::get('orders',                  [OrderAdminController::class, 'index']);
+        Route::get('orders/summary',          [OrderAdminController::class, 'summary']); // before {order}
+        Route::get('orders/stats',            [OrderAdminController::class, 'stats']);   // before {order}
         Route::get('orders/{order:number}',   [OrderAdminController::class, 'show']);
         Route::patch('orders/{order:number}', [OrderAdminController::class, 'update']);
+
+        // Money: every amount received or given back is one row (permissions payment.record / payment.refund)
+        Route::post('orders/{order:number}/payments', [OrderAdminController::class, 'storePayment'])
+            ->name('admin.orders.payments');
+        Route::post('orders/{order:number}/refunds', [OrderAdminController::class, 'storeRefund'])
+            ->name('admin.orders.refunds');
     });
