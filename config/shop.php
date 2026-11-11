@@ -76,11 +76,11 @@ return [
     | so the customer types the riel amount shown on the payment screen.
     */
     'khqr' => [
-        'account_name'     => 'SAM CHANNA',  // shown under the QR so customers know they pay the right shop
+        'account_name'     => 'SAM CHANNA', 
         'bank'             => 'ACLEDA',
-        'currency'         => 'KHR',         // currency of the QR: KHR (riel) or USD
-        'khr_per_usd'      => 4100,          // !! SAMPLE exchange rate: set the shop's own rate
-        'pay_within_hours' => 24,            // unpaid KHQR orders are cancelled after this (stock goes back)
+        'currency'         => 'KHR',         
+        'khr_per_usd'      => 4100,          
+        'pay_within_hours' => 24,           
     ],
 
     // Highest order total accepted as Cash on Delivery (null = no limit)
