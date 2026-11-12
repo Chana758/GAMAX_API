@@ -4,7 +4,7 @@ REST API for **GAMMAX**, an online shop for gaming gear and PC parts in Cambodia
 Customers browse products, check out with **KHQR** or **Cash on Delivery**, and track their orders.
 Staff run the shop from an admin panel: catalog, orders, payments and refunds.
 
-Built with **Laravel 12**, **PostgreSQL** and **Sanctum** token authentication.
+Built with **Laravel 13**, **PostgreSQL** and **Sanctum** token authentication.
 
 - Frontend (React): [Chana758/EC-GAMAX-Front](https://github.com/Chana758/EC-GAMAX-Front)
 - Live demo: coming soon
@@ -44,11 +44,11 @@ Built with **Laravel 12**, **PostgreSQL** and **Sanctum** token authentication.
 
 | Area | Tools |
 |---|---|
-| Language and framework | PHP 8.2+, Laravel 12 |
+| Language and framework | PHP 8.3+, Laravel 13 |
 | Database | PostgreSQL (SQLite in memory for tests) |
 | Auth | Laravel Sanctum (Bearer tokens) |
 | Roles and permissions | spatie/laravel-permission + Laravel Policies |
-| Tests | PHPUnit 11 (feature tests) |
+| Tests | PHPUnit 12 (feature tests) |
 | Scheduling | Laravel scheduler (artisan commands) |
 
 ---
@@ -108,7 +108,7 @@ All endpoints start with `/api/v1`. Protected endpoints need `Authorization: Bea
 ## Getting started
 
 ### Requirements
-- PHP 8.2+ and Composer
+- PHP 8.3+ and Composer
 - PostgreSQL 14+
 
 ### Install
